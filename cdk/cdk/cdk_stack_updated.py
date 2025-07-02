@@ -28,10 +28,12 @@ class CdkStack(Stack):
             removal_policy=RemovalPolicy.DESTROY  # For development only
         )
 
-            # S3 bucket for storing dog images
+        # S3 bucket for storing dog images
         images_bucket = s3.Bucket(
             self, 'PupperImagesBucket',
             bucket_name=f'pupper-images-{self.account}-{self.region}',
+            encryption=s3.BucketEncryption.KMS,
+            encryption_key=encryption_key,
             versioned=True,
             removal_policy=RemovalPolicy.DESTROY,
             auto_delete_objects=True,
@@ -41,15 +43,7 @@ class CdkStack(Stack):
                 ignore_public_acls=False,
                 restrict_public_buckets=False
             ),
-            public_read_access=True,
-            cors=[
-                s3.CorsRule(
-                    allowed_methods=[s3.HttpMethods.PUT, s3.HttpMethods.POST, s3.HttpMethods.GET],
-                    allowed_origins=["*"],
-                    allowed_headers=["*"],
-                    max_age=3000
-                )
-            ]
+            public_read_access=True
         )
 
         # DynamoDB table for storing dog information

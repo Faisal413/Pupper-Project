@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pupper Upload API - Demo</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #34495e;
+        }
+        input, textarea, select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        textarea {
+            height: 100px;
+            resize: vertical;
+        }
+        .required {
+            color: red;
+        }
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
+        }
+        button {
+            flex: 1;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .btn-primary {
+            background-color: #3498db;
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: #2980b9;
+        }
+        .btn-secondary {
+            background-color: #95a5a6;
+            color: white;
+        }
+        .btn-secondary:hover {
+            background-color: #7f8c8d;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+        .success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .info {
+            background-color: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+        .image-preview {
+            max-width: 200px;
+            max-height: 200px;
+            margin-top: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .config-section {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🐕 Pupper Upload API Demo</h1>
+        
+        <div class="config-section">
+            <h3>API Configuration</h3>
+            <div class="form-group">
+                <label for="apiUrl">API Base URL:</label>
+                <input type="text" id="apiUrl" placeholder="https://your-api-gateway-url.amazonaws.com/prod" 
+                       value="https://your-api-gateway-url.amazonaws.com/prod">
+            </div>
+        </div>
+
+        <form id="uploadForm">
+            <h3>Dog Information</h3>
+            
+            <div class="form-group">
+                <label for="shelter">Shelter Name <span class="required">*</span>:</label>
+                <input type="text" id="shelter" name="shelter" required 
+                       placeholder="e.g., Happy Paws Shelter">
+            </div>
+
+            <div class="form-group">
+                <label for="city">City <span class="required">*</span>:</label>
+                <input type="text" id="city" name="city" required 
+                       placeholder="e.g., Charlotte">
+            </div>
+
+            <div class="form-group">
+                <label for="state">State <span class="required">*</span>:</label>
+                <input type="text" id="state" name="state" required 
+                       placeholder="e.g., NC" maxlength="2">
+            </div>
+
+            <div class="form-group">
+                <label for="dog_name">Dog Name <span class="required">*</span>:</label>
+                <input type="text" id="dog_name" name="dog_name" required 
+                       placeholder="e.g., Buddy">
+            </div>
+
+            <div class="form-group">
+                <label for="dog_species">Dog Species <span class="required">*</span>:</label>
+                <select id="dog_species" name="dog_species" required>
+                    <option value="">Select species...</option>
+                    <option value="Labrador Retriever">Labrador Retriever</option>
+                    <option value="Yellow Labrador">Yellow Labrador</option>
+                    <option value="Black Labrador">Black Labrador</option>
+                    <option value="Chocolate Labrador">Chocolate Labrador</option>
+                    <option value="Labrador Mix">Labrador Mix</option>
+                    <option value="German Shepherd">German Shepherd (will be rejected)</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="shelter_entry_date">Shelter Entry Date <span class="required">*</span>:</label>
+                <input type="date" id="shelter_entry_date" name="shelter_entry_date" required>
+            </div>
+
+            <div class="form-group">
+                <label for="dog_description">Dog Description <span class="required">*</span>:</label>
+                <textarea id="dog_description" name="dog_description" required 
+                          placeholder="Describe the dog's personality, behavior, and any special needs..."></textarea>
+            </div>
+
+            <h3>Optional Information</h3>
+
+            <div class="form-group">
+                <label for="dog_birthday">Dog Birthday:</label>
+                <input type="date" id="dog_birthday" name="dog_birthday">
+            </div>
+
+            <div class="form-group">
+                <label for="dog_weight">Dog Weight (lbs):</label>
+                <input type="text" id="dog_weight" name="dog_weight" 
+                       placeholder="e.g., 65 or sixty-five pounds">
+            </div>
+
+            <div class="form-group">
+                <label for="dog_color">Dog Color:</label>
+                <input type="text" id="dog_color" name="dog_color" 
+                       placeholder="e.g., Yellow, Black, Chocolate">
+            </div>
+
+            <div class="form-group">
+                <label for="dog_photo">Dog Photo:</label>
+                <input type="file" id="dog_photo" name="dog_photo" accept="image/*">
+                <img id="imagePreview" class="image-preview" style="display: none;">
+            </div>
+
+            <div class="button-group">
+                <button type="submit" class="btn-primary">Upload Dog</button>
+                <button type="button" class="btn-secondary" onclick="testBulkUpload()">Test Bulk Upload</button>
+                <button type="button" class="btn-secondary" onclick="checkStatus()">Check Status</button>
+            </div>
+        </form>
+
+        <div id="result"></div>
+    </div>
+
+    <script>
+        // Image preview functionality
+        document.getElementById('dog_photo').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            const preview = document.getElementById('imagePreview');
+            
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    preview.src = e.target.result;
+                    preview.style.display = 'block';
+                };
+                reader.readAsDataURL(file);
+            } else {
+                preview.style.display = 'none';
+            }
+        });
+
+        // Form submission
+        document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const apiUrl = document.getElementById('apiUrl').value.trim();
+            if (!apiUrl || apiUrl.includes('your-api-gateway-url')) {
+                showResult('Please configure your API Gateway URL first!', 'error');
+                return;
+            }
+
+            const formData = new FormData(e.target);
+            const data = {};
+            
+            // Convert form data to JSON
+            for (let [key, value] of formData.entries()) {
+                if (value) data[key] = value;
+            }
+
+            // Handle image file
+            const photoFile = document.getElementById('dog_photo').files[0];
+            if (photoFile) {
+                try {
+                    const base64 = await fileToBase64(photoFile);
+                    data.dog_photo = base64;
+                } catch (error) {
+                    showResult('Error processing image: ' + error.message, 'error');
+                    return;
+                }
+            }
+
+            // Send request
+            try {
+                showResult('Uploading...', 'info');
+                
+                const response = await fetch(`${apiUrl}/upload`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showResult('Upload successful!\n\n' + JSON.stringify(result, null, 2), 'success');
+                    document.getElementById('uploadForm').reset();
+                    document.getElementById('imagePreview').style.display = 'none';
+                } else {
+                    showResult('Upload failed:\n\n' + JSON.stringify(result, null, 2), 'error');
+                }
+            } catch (error) {
+                showResult('Network error: ' + error.message, 'error');
+            }
+        });
+
+        // Bulk upload test
+        async function testBulkUpload() {
+            const apiUrl = document.getElementById('apiUrl').value.trim();
+            if (!apiUrl || apiUrl.includes('your-api-gateway-url')) {
+                showResult('Please configure your API Gateway URL first!', 'error');
+                return;
+            }
+
+            const bulkData = {
+                dogs: [
+                    {
+                        shelter: "Test Bulk Shelter",
+                        city: "Raleigh",
+                        state: "NC",
+                        dog_name: "Bulk Test 1",
+                        dog_species: "Labrador Retriever",
+                        shelter_entry_date: "2024-01-01",
+                        dog_description: "First bulk test dog"
+                    },
+                    {
+                        shelter: "Test Bulk Shelter",
+                        city: "Raleigh",
+                        state: "NC",
+                        dog_name: "Bulk Test 2",
+                        dog_species: "Yellow Lab",
+                        shelter_entry_date: "2024-01-02",
+                        dog_description: "Second bulk test dog"
+                    },
+                    {
+                        shelter: "Test Bulk Shelter",
+                        city: "Raleigh",
+                        state: "NC",
+                        dog_name: "Invalid Dog",
+                        dog_species: "Poodle",
+                        shelter_entry_date: "2024-01-03",
+                        dog_description: "This should be rejected"
+                    }
+                ]
+            };
+
+            try {
+                showResult('Testing bulk upload...', 'info');
+                
+                const response = await fetch(`${apiUrl}/upload/bulk`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(bulkData)
+                });
+
+                const result = await response.json();
+                showResult('Bulk upload test result:\n\n' + JSON.stringify(result, null, 2), 
+                          response.ok ? 'success' : 'error');
+            } catch (error) {
+                showResult('Bulk upload error: ' + error.message, 'error');
+            }
+        }
+
+        // Check upload status
+        async function checkStatus() {
+            const apiUrl = document.getElementById('apiUrl').value.trim();
+            if (!apiUrl || apiUrl.includes('your-api-gateway-url')) {
+                showResult('Please configure your API Gateway URL first!', 'error');
+                return;
+            }
+
+            try {
+                showResult('Checking status...', 'info');
+                
+                const response = await fetch(`${apiUrl}/upload/status`);
+                const result = await response.json();
+                
+                showResult('Upload status:\n\n' + JSON.stringify(result, null, 2), 
+                          response.ok ? 'success' : 'error');
+            } catch (error) {
+                showResult('Status check error: ' + error.message, 'error');
+            }
+        }
+
+        // Utility functions
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = error => reject(error);
+            });
+        }
+
+        function showResult(message, type) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.textContent = message;
+            resultDiv.className = `result ${type}`;
+        }
+
+        // Set default date to today
+        document.getElementById('shelter_entry_date').valueAsDate = new Date();
+    </script>
+</body>
+</html>

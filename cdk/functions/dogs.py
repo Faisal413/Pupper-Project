@@ -3,10 +3,11 @@ import boto3
 import os
 import uuid
 import logging
+import base64
 from datetime import datetime, timezone
 from decimal import Decimal
-import base64
 from typing import Dict, Any, Optional
+import re
 
 # Configure structured logging
 logger = logging.getLogger()
@@ -15,14 +16,308 @@ logger.setLevel(logging.INFO)
 # Initialize AWS clients
 dynamodb = boto3.resource('dynamodb')
 kms = boto3.client('kms')
+s3 = boto3.client('s3')
 
 # Environment variables
 DOGS_TABLE_NAME = os.environ['DOGS_TABLE_NAME']
 INTERACTIONS_TABLE_NAME = os.environ['INTERACTIONS_TABLE_NAME']
 KMS_KEY_ID = os.environ['KMS_KEY_ID']
+IMAGES_BUCKET_NAME = os.environ['IMAGES_BUCKET_NAME']
 
 dogs_table = dynamodb.Table(DOGS_TABLE_NAME)
 interactions_table = dynamodb.Table(INTERACTIONS_TABLE_NAME)
+
+def generate_presigned_url(bucket_name, object_name, expiration=3600):
+    """Generate a presigned URL for S3 object"""
+    try:
+        response = s3.generate_presigned_url('get_object',
+                                             Params={'Bucket': bucket_name,
+                                                    'Key': object_name},
+                                             ExpiresIn=expiration)
+        return response
+    except Exception as e:
+        logger.error(f"Error generating presigned URL: {str(e)}")
+        return None
+
+def handle_image_upload(dog_id, shelter_id, request_body, request_id):
+    """Handle image upload for a dog"""
+    try:
+        # Check if the request contains base64 encoded image data
+        if 'image_data' not in request_body or 'filename' not in request_body:
+            return {
+                'statusCode': 400,
+                'body': json.dumps({
+                    'message': 'Missing required fields: image_data and filename'
+                })
+            }
+        
+        # Extract image data and decode from base64
+        image_data = request_body['image_data']
+        
+        # Remove data URL prefix if present (e.g., "data:image/jpeg;base64,")
+        if ',' in image_data:
+            image_data = image_data.split(',', 1)[1]
+            
+        try:
+            decoded_image = base64.b64decode(image_data)
+        except Exception as e:
+            logger.error(f"Error decoding base64 image: {str(e)}", extra={"request_id": request_id})
+            return {
+                'statusCode': 400,
+                'body': json.dumps({
+                    'message': 'Invalid base64 encoded image data'
+                })
+            }
+        
+        # Generate a unique filename
+        filename = request_body['filename']
+        file_extension = os.path.splitext(filename)[1].lower()
+        
+        # Validate file extension
+        valid_extensions = ['.jpg', '.jpeg', '.png', '.gif']
+        if file_extension not in valid_extensions:
+            return {
+                'statusCode': 400,
+                'body': json.dumps({
+                    'message': f'Invalid file extension. Allowed: {", ".join(valid_extensions)}'
+                })
+            }
+        
+        # Create a unique key for the uploaded image
+        upload_key = f"uploads/{shelter_id}/{dog_id}/{str(uuid.uuid4())}{file_extension}"
+        
+        # Upload the image to S3
+        s3.put_object(
+            Bucket=IMAGES_BUCKET_NAME,
+            Key=upload_key,
+            Body=decoded_image,
+            ContentType=f"image/{file_extension[1:]}"  # Remove the dot from extension
+        )
+        
+        return {
+            'statusCode': 202,  # Accepted - processing will happen asynchronously
+            'body': json.dumps({
+                'message': 'Image uploaded successfully and is being processed',
+                'upload_key': upload_key
+            })
+        }
+        
+    except Exception as e:
+        logger.error(f"Error handling image upload: {str(e)}", extra={"request_id": request_id})
+        return {
+            'statusCode': 500,
+            'body': json.dumps({
+                'message': f'Error handling image upload: {str(e)}'
+            })
+        }
+
+def get_dog_images(dog_id, shelter_id, request_id):
+    """Get all images for a specific dog"""
+    try:
+        # Get the dog record
+        response = dogs_table.get_item(
+            Key={
+                'shelter_id': shelter_id,
+                'dog_id': dog_id
+            }
+        )
+        
+        if 'Item' not in response:
+            return {
+                'statusCode': 404,
+                'body': json.dumps({
+                    'message': f'Dog not found with ID: {dog_id}'
+                })
+            }
+        
+        dog = response['Item']
+        
+        # Check if the dog has images
+        if 'images' not in dog or not dog['images']:
+            return {
+                'statusCode': 200,
+                'body': json.dumps({
+                    'message': 'No images found for this dog',
+                    'images': []
+                })
+            }
+        
+        # Generate presigned URLs for each image
+        images_with_urls = []
+        for image in dog['images']:
+            image_with_urls = image.copy()
+            
+            # Generate URLs with 1 hour expiration
+            image_with_urls['original_url'] = generate_presigned_url(
+                IMAGES_BUCKET_NAME, image['original_key'], 3600)
+            image_with_urls['standard_url'] = generate_presigned_url(
+                IMAGES_BUCKET_NAME, image['standard_key'], 3600)
+            image_with_urls['thumbnail_url'] = generate_presigned_url(
+                IMAGES_BUCKET_NAME, image['thumbnail_key'], 3600)
+                
+            images_with_urls.append(image_with_urls)
+        
+        return {
+            'statusCode': 200,
+            'body': json.dumps({
+                'dog_id': dog_id,
+                'shelter_id': shelter_id,
+                'images': images_with_urls
+            })
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting dog images: {str(e)}", extra={"request_id": request_id})
+        return {
+            'statusCode': 500,
+            'body': json.dumps({
+                'message': f'Error getting dog images: {str(e)}'
+            })
+        }
+
+def get_specific_image(dog_id, shelter_id, image_id, request_id):
+    """Get a specific image for a dog"""
+    try:
+        # Get the dog record
+        response = dogs_table.get_item(
+            Key={
+                'shelter_id': shelter_id,
+                'dog_id': dog_id
+            }
+        )
+        
+        if 'Item' not in response:
+            return {
+                'statusCode': 404,
+                'body': json.dumps({
+                    'message': f'Dog not found with ID: {dog_id}'
+                })
+            }
+        
+        dog = response['Item']
+        
+        # Check if the dog has images
+        if 'images' not in dog or not dog['images']:
+            return {
+                'statusCode': 404,
+                'body': json.dumps({
+                    'message': f'No images found for dog with ID: {dog_id}'
+                })
+            }
+        
+        # Find the specific image
+        image = next((img for img in dog['images'] if img['image_id'] == image_id), None)
+        
+        if not image:
+            return {
+                'statusCode': 404,
+                'body': json.dumps({
+                    'message': f'Image not found with ID: {image_id}'
+                })
+            }
+        
+        # Generate presigned URLs
+        image_with_urls = image.copy()
+        image_with_urls['original_url'] = generate_presigned_url(
+            IMAGES_BUCKET_NAME, image['original_key'], 3600)
+        image_with_urls['standard_url'] = generate_presigned_url(
+            IMAGES_BUCKET_NAME, image['standard_key'], 3600)
+        image_with_urls['thumbnail_url'] = generate_presigned_url(
+            IMAGES_BUCKET_NAME, image['thumbnail_key'], 3600)
+        
+        return {
+            'statusCode': 200,
+            'body': json.dumps({
+                'dog_id': dog_id,
+                'shelter_id': shelter_id,
+                'image': image_with_urls
+            })
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting specific image: {str(e)}", extra={"request_id": request_id})
+        return {
+            'statusCode': 500,
+            'body': json.dumps({
+                'message': f'Error getting specific image: {str(e)}'
+            })
+        }
+
+def delete_image(dog_id, shelter_id, image_id, request_id):
+    """Delete a specific image for a dog"""
+    try:
+        # Get the dog record
+        response = dogs_table.get_item(
+            Key={
+                'shelter_id': shelter_id,
+                'dog_id': dog_id
+            }
+        )
+        
+        if 'Item' not in response:
+            return {
+                'statusCode': 404,
+                'body': json.dumps({
+                    'message': f'Dog not found with ID: {dog_id}'
+                })
+            }
+        
+        dog = response['Item']
+        
+        # Check if the dog has images
+        if 'images' not in dog or not dog['images']:
+            return {
+                'statusCode': 404,
+                'body': json.dumps({
+                    'message': f'No images found for dog with ID: {dog_id}'
+                })
+            }
+        
+        # Find the specific image
+        image = next((img for img in dog['images'] if img['image_id'] == image_id), None)
+        
+        if not image:
+            return {
+                'statusCode': 404,
+                'body': json.dumps({
+                    'message': f'Image not found with ID: {image_id}'
+                })
+            }
+        
+        # Delete the image files from S3
+        s3.delete_object(Bucket=IMAGES_BUCKET_NAME, Key=image['original_key'])
+        s3.delete_object(Bucket=IMAGES_BUCKET_NAME, Key=image['standard_key'])
+        s3.delete_object(Bucket=IMAGES_BUCKET_NAME, Key=image['thumbnail_key'])
+        
+        # Remove the image from the dog's record
+        updated_images = [img for img in dog['images'] if img['image_id'] != image_id]
+        
+        dogs_table.update_item(
+            Key={
+                'shelter_id': shelter_id,
+                'dog_id': dog_id
+            },
+            UpdateExpression="SET images = :images",
+            ExpressionAttributeValues={
+                ':images': updated_images
+            }
+        )
+        
+        return {
+            'statusCode': 200,
+            'body': json.dumps({
+                'message': f'Image {image_id} deleted successfully'
+            })
+        }
+        
+    except Exception as e:
+        logger.error(f"Error deleting image: {str(e)}", extra={"request_id": request_id})
+        return {
+            'statusCode': 500,
+            'body': json.dumps({
+                'message': f'Error deleting image: {str(e)}'
+            })
+        }
 
 def handler(event, context):
     """
@@ -31,11 +326,12 @@ def handler(event, context):
     request_id = context.aws_request_id if context else str(uuid.uuid4())
     
     # Structured logging
+    headers = event.get('headers') or {}
     logger.info("Request started", extra={
         "request_id": request_id,
         "http_method": event.get('httpMethod'),
         "path": event.get('path'),
-        "user_agent": event.get('headers', {}).get('User-Agent', 'Unknown')
+        "user_agent": headers.get('User-Agent', 'Unknown')
     })
     
     try:
@@ -67,18 +363,43 @@ def handler(event, context):
         
         elif path.startswith('/dogs/') and 'dog_id' in path_parameters:
             dog_id = path_parameters['dog_id']
-            if http_method == 'GET':
-                return get_dog(dog_id, query_parameters, request_id)
-            elif http_method == 'PUT':
-                return update_dog(dog_id, request_body, request_id)
-            elif http_method == 'DELETE':
-                return delete_dog(dog_id, query_parameters, request_id)
+            
+            # Check if this is an image-related request
+            if '/images' in path:
+                shelter_id = query_parameters.get('shelter_id')
+                if not shelter_id:
+                    return create_response(400, {'error': 'Missing required query parameter: shelter_id'})
+                
+                # Handle image endpoints
+                if path.endswith('/images'):
+                    if http_method == 'GET':
+                        return get_dog_images(dog_id, shelter_id, request_id)
+                    elif http_method == 'POST':
+                        return handle_image_upload(dog_id, shelter_id, request_body, request_id)
+                elif 'image_id' in path_parameters:
+                    image_id = path_parameters['image_id']
+                    if http_method == 'GET':
+                        return get_specific_image(dog_id, shelter_id, image_id, request_id)
+                    elif http_method == 'DELETE':
+                        return delete_image(dog_id, shelter_id, image_id, request_id)
+            else:
+                # Regular dog endpoints
+                if http_method == 'GET':
+                    return get_dog(dog_id, query_parameters, request_id)
+                elif http_method == 'PUT':
+                    return update_dog(dog_id, request_body, request_id)
+                elif http_method == 'DELETE':
+                    return delete_dog(dog_id, query_parameters, request_id)
         
         elif path == '/interactions':
             if http_method == 'POST':
                 return create_interaction(request_body, request_id)
             elif http_method == 'GET':
                 return get_user_interactions(query_parameters, request_id)
+        
+        elif path == '/upload':
+            if http_method == 'POST':
+                return handle_simple_upload(request_body, request_id)
         
         logger.warning("Endpoint not found", extra={
             "request_id": request_id,
@@ -362,6 +683,37 @@ def parse_weight(weight_str) -> Optional[float]:
             return float(numbers[0])
     
     return None
+
+def handle_simple_upload(request_body, request_id):
+    """Generate presigned URL for S3 upload"""
+    try:
+        if 'filename' not in request_body:
+            return create_response(400, {'error': 'Missing filename'})
+        
+        filename = request_body['filename']
+        file_extension = os.path.splitext(filename)[1].lower()
+        
+        if file_extension not in ['.jpg', '.jpeg', '.png', '.gif']:
+            return create_response(400, {'error': 'Invalid file type'})
+        
+        upload_key = f"uploads/{str(uuid.uuid4())}{file_extension}"
+        
+        presigned_post = s3.generate_presigned_post(
+            Bucket=IMAGES_BUCKET_NAME,
+            Key=upload_key,
+            ExpiresIn=3600
+        )
+        
+        return create_response(200, {
+            'upload_url': presigned_post['url'],
+            'fields': presigned_post['fields'],
+            'key': upload_key,
+            'instructions': 'Use POST method with form-data. Add all fields, then add file as "file" field'
+        })
+        
+    except Exception as e:
+        logger.error(f"Upload error: {str(e)}", extra={"request_id": request_id})
+        return create_response(500, {'error': 'Failed to generate upload URL'})
 
 def create_response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
     """Create standardized API response"""

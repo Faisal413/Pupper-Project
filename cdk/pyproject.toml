@@ -9,6 +9,7 @@ dependencies = [
     "cdk-dynamo-table-view>=0.2.488",
     "constructs>=10.0.0,<11.0.0",
     "boto3>=1.34.0",
+    "Pillow>=10.0.0",  # For image processing
 ]
 
 [dependency-groups]

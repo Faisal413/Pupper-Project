@@ -28,10 +28,12 @@ class CdkStack(Stack):
             removal_policy=RemovalPolicy.DESTROY  # For development only
         )
 
-            # S3 bucket for storing dog images
+        # S3 bucket for storing dog images
         images_bucket = s3.Bucket(
             self, 'PupperImagesBucket',
             bucket_name=f'pupper-images-{self.account}-{self.region}',
+            encryption=s3.BucketEncryption.KMS,
+            encryption_key=encryption_key,
             versioned=True,
             removal_policy=RemovalPolicy.DESTROY,
             auto_delete_objects=True,
@@ -41,15 +43,7 @@ class CdkStack(Stack):
                 ignore_public_acls=False,
                 restrict_public_buckets=False
             ),
-            public_read_access=True,
-            cors=[
-                s3.CorsRule(
-                    allowed_methods=[s3.HttpMethods.PUT, s3.HttpMethods.POST, s3.HttpMethods.GET],
-                    allowed_origins=["*"],
-                    allowed_headers=["*"],
-                    max_age=3000
-                )
-            ]
+            public_read_access=True
         )
 
         # DynamoDB table for storing dog information
@@ -189,7 +183,7 @@ class CdkStack(Stack):
         dogs_resource.add_method('GET', apigw.LambdaIntegration(dogs_lambda))  # Get all dogs with filters
         dogs_resource.add_method('POST', apigw.LambdaIntegration(dogs_lambda))  # Create new dog
 
-        dog_resource = dogs_resource.add_resource('{dog_id}')
+        dog_resource = dogs_resources.add_resource('{dog_id}')
         dog_resource.add_method('GET', apigw.LambdaIntegration(dogs_lambda))  # Get specific dog
         dog_resource.add_method('PUT', apigw.LambdaIntegration(dogs_lambda))  # Update dog
         dog_resource.add_method('DELETE', apigw.LambdaIntegration(dogs_lambda))  # Delete dog
