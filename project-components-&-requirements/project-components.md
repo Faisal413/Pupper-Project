@@ -1,5 +1,5 @@
-#### Component 1 - Database and REST API
-- Schema / Data structure(s) defined.
+#### Component 1 - Database and REST API..
+- Schema / Data structure(s) defined.  
 - Database of choice deployed (NoSQL / Relational)
 - REST API deployed
     - Routes to store information in the database
