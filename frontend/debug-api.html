@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug API</title>
+</head>
+<body>
+    <h1>Debug Pupper API</h1>
+    
+    <h2>Test GET /dogs</h2>
+    <button onclick="testGetDogs()">Test GET Dogs</button>
+    <div id="get-result"></div>
+    
+    <h2>Test POST /dogs</h2>
+    <button onclick="testAddDog()">Test Add Dog</button>
+    <div id="post-result"></div>
+
+    <script>
+        const API_URL = 'https://3wfbfr7110.execute-api.us-east-1.amazonaws.com/prod';
+
+        async function testGetDogs() {
+            const resultDiv = document.getElementById('get-result');
+            resultDiv.innerHTML = 'Testing...';
+            
+            try {
+                const response = await fetch(`${API_URL}/dogs`);
+                const responseText = await response.text();
+                
+                resultDiv.innerHTML = `
+                    <h3>GET /dogs Response:</h3>
+                    <p><strong>Status:</strong> ${response.status} ${response.statusText}</p>
+                    <p><strong>Headers:</strong></p>
+                    <pre>${JSON.stringify([...response.headers.entries()], null, 2)}</pre>
+                    <p><strong>Body:</strong></p>
+                    <pre>${responseText}</pre>
+                `;
+                
+                console.log('GET Response:', {
+                    status: response.status,
+                    headers: [...response.headers.entries()],
+                    body: responseText
+                });
+            } catch (error) {
+                resultDiv.innerHTML = `<h3>Error:</h3><pre>${error.message}</pre>`;
+                console.error('GET Error:', error);
+            }
+        }
+
+        async function testAddDog() {
+            const resultDiv = document.getElementById('post-result');
+            resultDiv.innerHTML = 'Testing...';
+            
+            const testDog = {
+                shelter: "Test Shelter",
+                city: "Test City", 
+                state: "TX",
+                dog_name: "Test Dog",
+                species: "Labrador Retriever",
+                description: "Test description",
+                dog_weight: "50",
+                dog_color: "Brown"
+            };
+            
+            try {
+                const response = await fetch(`${API_URL}/dogs`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(testDog)
+                });
+                
+                const responseText = await response.text();
+                
+                resultDiv.innerHTML = `
+                    <h3>POST /dogs Response:</h3>
+                    <p><strong>Status:</strong> ${response.status} ${response.statusText}</p>
+                    <p><strong>Headers:</strong></p>
+                    <pre>${JSON.stringify([...response.headers.entries()], null, 2)}</pre>
+                    <p><strong>Body:</strong></p>
+                    <pre>${responseText}</pre>
+                `;
+                
+                console.log('POST Response:', {
+                    status: response.status,
+                    headers: [...response.headers.entries()],
+                    body: responseText
+                });
+            } catch (error) {
+                resultDiv.innerHTML = `<h3>Error:</h3><pre>${error.message}</pre>`;
+                console.error('POST Error:', error);
+            }
+        }
+    </script>
+</body>
+</html>

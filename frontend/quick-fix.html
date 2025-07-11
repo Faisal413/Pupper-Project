@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pupper - Dog Adoption (Quick Fix)</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f5f5f5; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 2rem; text-align: center; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+        .config-section { background: white; padding: 1.5rem; border-radius: 8px; margin-bottom: 2rem; }
+        .input-group { margin: 1rem 0; }
+        .input-group label { display: block; margin-bottom: 0.5rem; font-weight: bold; }
+        .input-group input { width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 4px; }
+        .btn { background: #667eea; color: white; padding: 0.75rem 1.5rem; border: none; border-radius: 4px; cursor: pointer; margin: 0.5rem; }
+        .btn:hover { background: #5a67d8; }
+        .btn.secondary { background: #6c757d; }
+        .btn.secondary:hover { background: #5a6268; }
+        .status { padding: 1rem; border-radius: 4px; margin: 1rem 0; }
+        .status.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .status.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .status.info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        .dogs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 2rem; margin-top: 2rem; }
+        .dog-card { background: white; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); overflow: hidden; transition: transform 0.3s; }
+        .dog-card:hover { transform: translateY(-5px); }
+        .dog-image { width: 100%; height: 250px; object-fit: cover; cursor: pointer; }
+        .dog-info { padding: 1.5rem; }
+        .dog-name { font-size: 1.5rem; font-weight: bold; color: #333; margin-bottom: 0.5rem; }
+        .dog-breed { color: #666; font-size: 1.1rem; margin-bottom: 1rem; }
+        .dog-description { color: #555; line-height: 1.6; margin-bottom: 1rem; }
+        .dog-meta { font-size: 0.9rem; color: #777; }
+        .no-image { background: #f0f0f0; height: 250px; display: flex; align-items: center; justify-content: center; color: #999; }
+        .loading { text-align: center; padding: 3rem; font-size: 1.2rem; color: #666; }
+        .actions { margin-top: 1rem; }
+        .wag-btn { background: #28a745; }
+        .wag-btn:hover { background: #218838; }
+        .growl-btn { background: #dc3545; }
+        .growl-btn:hover { background: #c82333; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🐕 Pupper - Dog Adoption Platform</h1>
+        <p>Find your perfect Labrador Retriever companion</p>
+    </div>
+
+    <div class="container">
+        <!-- API Configuration -->
+        <div class="config-section">
+            <h3>🔧 API Configuration</h3>
+            <div class="input-group">
+                <label for="apiUrl">API Gateway URL:</label>
+                <input type="text" id="apiUrl" placeholder="https://your-api-id.execute-api.region.amazonaws.com/prod" />
+            </div>
+            <div class="input-group">
+                <label for="userId">User ID (for testing):</label>
+                <input type="text" id="userId" value="test-user-123" />
+            </div>
+            <button class="btn" onclick="testConnection()">Test Connection</button>
+            <button class="btn" onclick="loadDogs()">Load Dogs</button>
+            <button class="btn secondary" onclick="addSampleDog()">Add Sample Dog</button>
+        </div>
+
+        <!-- Status Messages -->
+        <div id="status" style="display: none;"></div>
+
+        <!-- Dogs Display -->
+        <div id="loading" class="loading" style="display: none;">Loading...</div>
+        <div id="dogsContainer" class="dogs-grid"></div>
+    </div>
+
+    <script>
+        let currentApiUrl = '';
+        let currentUserId = 'test-user-123';
+
+        async function testConnection() {
+            const apiUrl = document.getElementById('apiUrl').value.trim();
+            if (!apiUrl) {
+                showStatus('Please enter an API URL', 'error');
+                return;
+            }
+
+            currentApiUrl = apiUrl;
+            showLoading('Testing connection...');
+            
+            try {
+                const response = await fetch(`${apiUrl}/dogs`);
+                if (response.ok) {
+                    const data = await response.json();
+                    showStatus(`✅ Connection successful! Found ${data.dogs ? data.dogs.length : 0} dogs.`, 'success');
+                } else {
+                    showStatus(`❌ Connection failed: ${response.status} ${response.statusText}`, 'error');
+                }
+            } catch (error) {
+                showStatus(`❌ Connection failed: ${error.message}`, 'error');
+            }
+            hideLoading();
+        }
+
+        async function loadDogs() {
+            const apiUrl = document.getElementById('apiUrl').value.trim();
+            if (!apiUrl) {
+                showStatus('Please enter an API URL', 'error');
+                return;
+            }
+
+            currentApiUrl = apiUrl;
+            currentUserId = document.getElementById('userId').value.trim();
+            showLoading('Loading dogs...');
+
+            try {
+                const response = await fetch(`${apiUrl}/dogs`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                console.log('API Response:', data);
+
+                const dogs = data.dogs || data || [];
+                displayDogs(dogs);
+                showStatus(`✅ Loaded ${dogs.length} dogs successfully!`, 'success');
+                
+            } catch (error) {
+                console.error('Error loading dogs:', error);
+                showStatus(`❌ Failed to load dogs: ${error.message}`, 'error');
+            }
+            
+            hideLoading();
+        }
+
+        async function addSampleDog() {
+            const apiUrl = document.getElementById('apiUrl').value.trim();
+            if (!apiUrl) {
+                showStatus('Please enter an API URL', 'error');
+                return;
+            }
+
+            const sampleDog = {
+                shelter: "Happy Paws Shelter",
+                city: "Seattle",
+                state: "WA",
+                dog_name: "Buddy",
+                species: "Labrador Retriever",
+                description: "Friendly and energetic dog looking for a loving home",
+                dog_weight: "65",
+                dog_color: "Golden"
+            };
+
+            showLoading('Adding sample dog...');
+
+            try {
+                const response = await fetch(`${apiUrl}/dogs`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(sampleDog)
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    showStatus('✅ Sample dog added successfully!', 'success');
+                    loadDogs(); // Reload the dogs list
+                } else {
+                    const error = await response.json();
+                    showStatus(`❌ Failed to add dog: ${error.error || 'Unknown error'}`, 'error');
+                }
+            } catch (error) {
+                showStatus(`❌ Error adding dog: ${error.message}`, 'error');
+            }
+
+            hideLoading();
+        }
+
+        async function wagDog(dogId, shelterId) {
+            await recordInteraction(dogId, shelterId, 'wag');
+        }
+
+        async function growlDog(dogId, shelterId) {
+            await recordInteraction(dogId, shelterId, 'growl');
+        }
+
+        async function recordInteraction(dogId, shelterId, type) {
+            if (!currentApiUrl) {
+                showStatus('Please configure API URL first', 'error');
+                return;
+            }
+
+            const interaction = {
+                user_id: currentUserId,
+                shelter_id: shelterId,
+                dog_id: dogId,
+                interaction_type: type
+            };
+
+            try {
+                const response = await fetch(`${currentApiUrl}/interactions`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(interaction)
+                });
+
+                if (response.ok) {
+                    showStatus(`✅ ${type.charAt(0).toUpperCase() + type.slice(1)} recorded!`, 'success');
+                } else {
+                    const error = await response.json();
+                    showStatus(`❌ Failed to record ${type}: ${error.error || 'Unknown error'}`, 'error');
+                }
+            } catch (error) {
+                showStatus(`❌ Error recording ${type}: ${error.message}`, 'error');
+            }
+        }
+
+        function displayDogs(dogs) {
+            const container = document.getElementById('dogsContainer');
+            
+            if (!dogs || dogs.length === 0) {
+                container.innerHTML = '<div class="loading">No dogs found. Try adding a sample dog first!</div>';
+                return;
+            }
+
+            container.innerHTML = dogs.map(dog => `
+                <div class="dog-card">
+                    ${dog.images && dog.images.length > 0 ? 
+                        `<img src="${dog.images[0].thumbnail_url || dog.images[0].standard_url}" 
+                             alt="${dog.dog_name || dog.name}" 
+                             class="dog-image" 
+                             onclick="openOriginalImage('${dog.images[0].original_url}')"
+                             onerror="this.parentElement.innerHTML='<div class=\\"no-image\\">No Image Available</div>'">`
+                        : '<div class="no-image">📷 No Image Available</div>'
+                    }
+                    <div class="dog-info">
+                        <div class="dog-name">${dog.dog_name || dog.name || 'Unknown'}</div>
+                        ${dog.species ? `<div class="dog-breed">${dog.species}</div>` : ''}
+                        <div class="dog-description">${dog.description || 'No description available'}</div>
+                        <div class="dog-meta">
+                            ${dog.shelter ? `<div><strong>Shelter:</strong> ${dog.shelter}</div>` : ''}
+                            ${dog.city && dog.state ? `<div><strong>Location:</strong> ${dog.city}, ${dog.state}</div>` : ''}
+                            ${dog.dog_weight ? `<div><strong>Weight:</strong> ${dog.dog_weight} lbs</div>` : ''}
+                            ${dog.dog_color ? `<div><strong>Color:</strong> ${dog.dog_color}</div>` : ''}
+                        </div>
+                        <div class="actions">
+                            <button class="btn wag-btn" onclick="wagDog('${dog.dog_id}', '${dog.shelter_id}')">🐕 Wag</button>
+                            <button class="btn growl-btn" onclick="growlDog('${dog.dog_id}', '${dog.shelter_id}')">😤 Growl</button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function openOriginalImage(imageUrl) {
+            if (imageUrl) {
+                window.open(imageUrl, '_blank');
+            }
+        }
+
+        function showStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+            statusDiv.style.display = 'block';
+            
+            // Auto-hide after 5 seconds
+            setTimeout(() => {
+                statusDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        function showLoading(message = 'Loading...') {
+            document.getElementById('loading').textContent = message;
+            document.getElementById('loading').style.display = 'block';
+        }
+
+        function hideLoading() {
+            document.getElementById('loading').style.display = 'none';
+        }
+
+        // Auto-populate API URL if we can detect it
+        window.onload = function() {
+            // You'll need to replace this with your actual API Gateway URL
+            // It should look like: https://xxxxxxxxxx.execute-api.us-east-1.amazonaws.com/prod
+            showStatus('👋 Welcome! Enter your API Gateway URL above to get started.', 'info');
+        };
+    </script>
+</body>
+</html>

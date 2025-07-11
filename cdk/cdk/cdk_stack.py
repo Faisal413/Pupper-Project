@@ -11,7 +11,8 @@ from aws_cdk import (
     aws_apigateway as apigw,
     aws_dynamodb as dynamodb,
     aws_kms as kms,
-    aws_s3 as s3
+    aws_s3 as s3,
+    aws_s3_notifications as s3n
 )
 
 
@@ -168,9 +169,41 @@ class CdkStack(Stack):
         encryption_key.grant_encrypt_decrypt(dogs_lambda)
         encryption_key.grant_encrypt_decrypt(upload_lambda)
         
+        # Lambda function for high-quality image processing (Container)
+        image_processor_lambda = _lambda.Function(
+    self, 'ImageProcessor',
+    runtime=_lambda.Runtime.PYTHON_3_11,
+    code=_lambda.Code.from_asset('functions'),
+    handler='image_resizer_simple.handler',
+    environment={
+                'DOGS_TABLE_NAME': dogs_table.table_name,
+                'IMAGES_BUCKET_NAME': images_bucket.bucket_name
+            },
+            timeout=Duration.seconds(120),
+            memory_size=2048
+        )
+
         # Grant Lambda permissions to access S3 bucket
         images_bucket.grant_read_write(dogs_lambda)
         images_bucket.grant_read_write(upload_lambda)
+        images_bucket.grant_read_write(image_processor_lambda)
+        
+        # Grant image processor access to DynamoDB
+        dogs_table.grant_read_write_data(image_processor_lambda)
+        
+        # Grant Rekognition permissions for image analysis
+        image_processor_lambda.add_to_role_policy(iam.PolicyStatement(
+            effect=iam.Effect.ALLOW,
+            actions=['rekognition:DetectLabels'],
+            resources=['*']
+        ))
+        
+        # Add S3 event trigger for automatic image processing
+        images_bucket.add_event_notification(
+            s3.EventType.OBJECT_CREATED,
+            s3n.LambdaDestination(image_processor_lambda),
+            s3.NotificationKeyFilter(prefix='uploads/images/')
+        )
 
         # API Gateway
         api = apigw.RestApi(

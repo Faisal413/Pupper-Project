@@ -13,12 +13,10 @@ logger.setLevel(logging.INFO)
 
 # Initialize AWS clients
 dynamodb = boto3.resource('dynamodb')
-s3 = boto3.client('s3')
 
 # Environment variables
 DOGS_TABLE_NAME = os.environ.get('DOGS_TABLE_NAME', 'pupper-dogs')
 INTERACTIONS_TABLE_NAME = os.environ.get('INTERACTIONS_TABLE_NAME', 'pupper-user-interactions')
-IMAGES_BUCKET_NAME = os.environ.get('IMAGES_BUCKET_NAME', '')
 
 dogs_table = dynamodb.Table(DOGS_TABLE_NAME)
 interactions_table = dynamodb.Table(INTERACTIONS_TABLE_NAME)
@@ -48,13 +46,6 @@ def handler(event, context):
                 return get_dogs()
             elif http_method == 'POST':
                 return create_dog(request_body)
-        elif path.startswith('/dogs/'):
-            dog_id = path.split('/')[-1]
-            if http_method == 'PUT':
-                return update_dog(dog_id, request_body)
-        elif path == '/upload':
-            if http_method == 'POST':
-                return get_upload_url(request_body)
         elif path == '/interactions':
             if http_method == 'POST':
                 return create_interaction(request_body)
@@ -125,18 +116,6 @@ def create_dog(dog_data):
         if 'dog_color' in dog_data and dog_data['dog_color']:
             dog_item['dog_color'] = dog_data['dog_color']
         
-        # Add image URL if provided
-        if 'image_url' in dog_data and dog_data['image_url']:
-            dog_item['images'] = [{
-                'thumbnail_url': dog_data['image_url'],
-                'standard_url': dog_data['image_url'],
-                'original_url': dog_data['image_url']
-            }]
-            logger.info(f"Dog created with image URL: {dog_data['image_url']}")
-            logger.info(f"Image data saved: {dog_item['images']}")
-        else:
-            logger.info("Dog created without image")
-        
         # Save to DynamoDB
         dogs_table.put_item(Item=dog_item)
         
@@ -201,102 +180,6 @@ def get_user_interactions(query_params):
     except Exception as e:
         logger.error(f"Error getting interactions: {str(e)}")
         return create_response(500, {'error': f'Failed to get interactions: {str(e)}'})
-
-def get_upload_url(request_body):
-    """Generate presigned URL for image upload"""
-    try:
-        filename = request_body.get('filename', 'image.jpg')
-        file_extension = os.path.splitext(filename)[1].lower()
-        
-        if file_extension not in ['.jpg', '.jpeg', '.png', '.gif']:
-            return create_response(400, {'error': 'Invalid file type'})
-        
-        # Generate unique key - match the S3 structure you see
-        upload_key = f"uploads/images/{str(uuid.uuid4())}{file_extension}"
-        
-        # Generate presigned URL for upload
-        presigned_url = s3.generate_presigned_url(
-            'put_object',
-            Params={
-                'Bucket': IMAGES_BUCKET_NAME,
-                'Key': upload_key,
-                'ContentType': f'image/{file_extension[1:]}',
-                'ACL': 'public-read'  # Make uploaded image publicly readable
-            },
-            ExpiresIn=3600
-        )
-        
-        # Generate public URL for the uploaded image
-        public_url = f'https://{IMAGES_BUCKET_NAME}.s3.amazonaws.com/{upload_key}'
-        
-        logger.info(f"Bucket name: {IMAGES_BUCKET_NAME}")
-        logger.info(f"Upload key: {upload_key}")
-        logger.info(f"Public URL: {public_url}")
-        
-        return create_response(200, {
-            'upload_url': presigned_url,
-            'image_key': upload_key,
-            'public_url': public_url
-        })
-        
-    except Exception as e:
-        logger.error(f"Error generating upload URL: {str(e)}")
-        return create_response(500, {'error': f'Failed to generate upload URL: {str(e)}'})
-
-def update_dog(dog_id, dog_data):
-    """Update existing dog"""
-    try:
-        # Find the dog first
-        response = dogs_table.scan(
-            FilterExpression='dog_id = :dog_id',
-            ExpressionAttributeValues={':dog_id': dog_id}
-        )
-        
-        if not response['Items']:
-            return create_response(404, {'error': 'Dog not found'})
-        
-        existing_dog = response['Items'][0]
-        shelter_id = existing_dog['shelter_id']
-        
-        # Update fields
-        update_expression = "SET updated_at = :updated_at"
-        expression_values = {':updated_at': datetime.now(timezone.utc).isoformat()}
-        
-        if 'shelter' in dog_data:
-            update_expression += ", shelter = :shelter"
-            expression_values[':shelter'] = dog_data['shelter']
-        if 'city' in dog_data:
-            update_expression += ", city = :city"
-            expression_values[':city'] = dog_data['city']
-        if 'state' in dog_data:
-            update_expression += ", #state = :state"
-            expression_values[':state'] = dog_data['state']
-        if 'dog_name' in dog_data:
-            update_expression += ", dog_name = :dog_name"
-            expression_values[':dog_name'] = dog_data['dog_name']
-        if 'description' in dog_data:
-            update_expression += ", description = :description"
-            expression_values[':description'] = dog_data['description']
-        if 'dog_weight' in dog_data:
-            update_expression += ", dog_weight = :dog_weight"
-            expression_values[':dog_weight'] = dog_data['dog_weight']
-        if 'dog_color' in dog_data:
-            update_expression += ", dog_color = :dog_color"
-            expression_values[':dog_color'] = dog_data['dog_color']
-        
-        # Update the item
-        dogs_table.update_item(
-            Key={'shelter_id': shelter_id, 'dog_id': dog_id},
-            UpdateExpression=update_expression,
-            ExpressionAttributeValues=expression_values,
-            ExpressionAttributeNames={'#state': 'state'} if 'state' in dog_data else None
-        )
-        
-        return create_response(200, {'message': 'Dog updated successfully'})
-        
-    except Exception as e:
-        logger.error(f"Error updating dog: {str(e)}")
-        return create_response(500, {'error': f'Failed to update dog: {str(e)}'})
 
 def create_response(status_code, body):
     """Create API response"""

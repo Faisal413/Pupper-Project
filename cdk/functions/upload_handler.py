@@ -124,13 +124,13 @@ def generate_presigned_url(event, cors_headers):
             }
         
         # Validate file type (only images)
-        allowed_types = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif']
+        allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
         if content_type not in allowed_types:
             return {
                 'statusCode': 400,
                 'headers': cors_headers,
                 'body': json.dumps({
-                    'error': f'Invalid file type. Allowed types: {allowed_types}'
+                    'error': f'Invalid file type: {content_type}. Allowed types: {allowed_types}'
                 })
             }
         
@@ -146,8 +146,7 @@ def generate_presigned_url(event, cors_headers):
             Params={
                 'Bucket': IMAGES_BUCKET_NAME,
                 'Key': s3_key,
-                'ContentType': content_type,
-
+                'ContentType': content_type
             },
             ExpiresIn=3600,  # URL expires in 1 hour
             HttpMethod='PUT'
@@ -266,20 +265,126 @@ def complete_dog_registration(event, cors_headers):
         dog_id = str(uuid.uuid4())
         
         # Encrypt sensitive data (dog name) using KMS
-        encrypted_dog_name = encrypt_dog_name(data['dog_name'])
+        try:
+            encrypted_dog_name = encrypt_dog_name(data['dog_name'])
+        except Exception as e:
+            logger.error(f"KMS encryption failed: {str(e)}")
+            # Fallback to plaintext if KMS fails
+            encrypted_dog_name = data['dog_name']
         
         # Create complete dog record for database
+        image_url = f"https://{IMAGES_BUCKET_NAME}.s3.amazonaws.com/{s3_key}"
         dog_record = {
             'shelter_id': shelter_id,
             'dog_id': dog_id,
             'shelter': data['shelter'],
             'city': data['city'],
             'state': data['state'],
+            'dog_name': data['dog_name'],  # Store plaintext for display
             'encrypted_dog_name': encrypted_dog_name,
             'species': data['dog_species'],
             'description': data['dog_description'],
             'image_s3_key': s3_key,
-            'image_url': f"https://{IMAGES_BUCKET_NAME}.s3.amazonaws.com/{s3_key}",
+            'images': [{
+                'thumbnail_url': image_url,
+                'standard_url': image_url,
+                'original_url': image_url
+            }],
+            'created_at': datetime.now(timezone.utc).isoformat(),
+            'updated_at': datetime.now(timezone.utc).isoformat()
+        }
+        
+        # Add optional fields if provided
+        if data.get('dog_birthday'):
+            dog_record['dog_birthday'] = data['dog_birthday']
+        if data.get('dog_weight'):
+            dog_record['dog_weight'] = data['dog_weight']
+        if data.get('dog_color'):
+            dog_record['dog_color'] = data['dog_color']
+        if data.get('shelter_entry_date'):
+            dog_record['shelter_entry_date'] = data['shelter_entry_date']
+        
+        # Save to DynamoDB
+        dogs_table.put_item(Item=dog_record)
+        
+        # Return success response
+        return {
+            'statusCode': 201,
+            'headers': cors_headers,
+            'body': json.dumps({
+                'message': 'Dog registered successfully',
+                'dog_id': dog_id,
+                'shelter_id': shelter_id,
+                'image_url': image_url,
+                'created_at': dog_record['created_at']
+            })
+        }
+        
+    except json.JSONDecodeError:
+        return {
+            'statusCode': 400,
+            'headers': cors_headers,
+            'body': json.dumps({'error': 'Invalid JSON format'})
+        }
+    except Exception as e:
+        logger.error(f"Error completing dog registration: {str(e)}")
+        return {
+            'statusCode': 500,
+            'headers': cors_headers,
+            'body': json.dumps({'error': 'Failed to complete registration'})
+        }
+
+def generate_shelter_id(shelter: str, city: str, state: str) -> str:
+    """Generate consistent shelter ID from location data"""
+    return f"{state}#{city}#{shelter}".replace(' ', '_').upper()
+
+def encrypt_dog_name(name: str) -> str:
+    """Encrypt dog name using KMS for privacy"""
+    try:
+        response = kms_client.encrypt(
+            KeyId=KMS_KEY_ID,
+            Plaintext=name.encode('utf-8')
+        )
+        import base64
+        return base64.b64encode(response['CiphertextBlob']).decode('utf-8')
+    except Exception as e:
+        logger.error(f"Error encrypting dog name: {str(e)}")
+        raisecies = data['dog_species'].lower()
+        if 'labrador' not in dog_species and 'lab' not in dog_species:
+            return {
+                'statusCode': 422,
+                'headers': cors_headers,
+                'body': json.dumps({
+                    'error': 'Only Labrador Retrievers are accepted',
+                    'species_provided': data['dog_species']
+                })
+            }
+        
+        # Generate unique identifiers
+        shelter_id = generate_shelter_id(data['shelter'], data['city'], data['state'])
+        dog_id = str(uuid.uuid4())
+        
+        # Encrypt sensitive data (dog name) using KMS
+        encrypted_dog_name = encrypt_dog_name(data['dog_name'])
+        
+        # Create complete dog record for database
+        image_url = f"https://{IMAGES_BUCKET_NAME}.s3.amazonaws.com/{s3_key}"
+        dog_record = {
+            'shelter_id': shelter_id,
+            'dog_id': dog_id,
+            'shelter': data['shelter'],
+            'city': data['city'],
+            'state': data['state'],
+            'dog_name': data['dog_name'],  # Store plaintext for display
+            'encrypted_dog_name': encrypted_dog_name,
+            'species': data['dog_species'],
+            'description': data['dog_description'],
+            'image_s3_key': s3_key,
+            'images': [{
+                'thumbnail_url': image_url,
+                'standard_url': image_url,
+                'original_url': image_url
+            }],
             'created_at': datetime.now(timezone.utc).isoformat(),
             'updated_at': datetime.now(timezone.utc).isoformat()
         }

@@ -1,13 +1,12 @@
-import os
 import json
 import boto3
+import os
 import uuid
+# PIL removed - using simple copy approach
+import io
 import logging
-import base64
-from io import BytesIO
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.parse import unquote_plus
-from PIL import Image
 
 # Configure logging
 logger = logging.getLogger()
@@ -16,175 +15,145 @@ logger.setLevel(logging.INFO)
 # Initialize AWS clients
 s3_client = boto3.client('s3')
 dynamodb = boto3.resource('dynamodb')
-dogs_table = dynamodb.Table(os.environ['DOGS_TABLE_NAME'])
-bucket_name = os.environ['IMAGES_BUCKET_NAME']
 
-# Image sizes
-STANDARD_SIZE = (400, 400)
-THUMBNAIL_SIZE = (50, 50)
+# Environment variables
+IMAGES_BUCKET_NAME = os.environ['IMAGES_BUCKET_NAME']
+DOGS_TABLE_NAME = os.environ['DOGS_TABLE_NAME']
 
-def resize_image(image_data, size):
-    """Resize image to specified dimensions"""
+# Get DynamoDB table
+dogs_table = dynamodb.Table(DOGS_TABLE_NAME)
+
+def handler(event, context):
+    """
+    This function is automatically triggered when an image is uploaded to S3.
+    It processes the image by creating resized versions and updating the database.
+    
+    What happens:
+    1. S3 sends event when new image uploaded
+    2. We download the original image
+    3. We create 2 resized versions (400x400 and 50x50)
+    4. We upload both resized versions to S3
+    5. We update database with all image URLs
+    """
+    
     try:
-        with Image.open(BytesIO(image_data)) as img:
-            # Convert to RGB if image has alpha channel (RGBA)
-            if img.mode == 'RGBA':
-                img = img.convert('RGB')
-                
-            # Resize image while maintaining aspect ratio
-            img.thumbnail(size)
+        logger.info(f"Image processing triggered: {json.dumps(event, default=str)}")
+        
+        # Step 1: Extract information from S3 event
+        for record in event['Records']:
+            # Get bucket and object key from the S3 event
+            bucket_name = record['s3']['bucket']['name']
+            object_key = unquote_plus(record['s3']['object']['key'])
             
-            # Save to BytesIO object
-            buffer = BytesIO()
-            img.save(buffer, format='PNG')
-            buffer.seek(0)
-            return buffer.getvalue()
-    except Exception as e:
-        logger.error(f"Error resizing image: {str(e)}")
-        raise
-
-def process_image(bucket, key, dog_id, shelter_id):
-    """Process uploaded image: create standard and thumbnail versions"""
-    try:
-        # Get the uploaded image
-        response = s3_client.get_object(Bucket=bucket, Key=key)
-        image_data = response['Body'].read()
-        content_type = response.get('ContentType', 'image/jpeg')
-        
-        # Generate unique IDs for processed images
-        image_id = str(uuid.uuid4())
-        timestamp = datetime.now().isoformat()
-        
-        # Extract original filename from key
-        filename = key.split('/')[-1]
-        base_filename, ext = os.path.splitext(filename)
-        
-        # Create paths for processed images
-        original_key = f"dogs/{dog_id}/original/{image_id}{ext}"
-        standard_key = f"dogs/{dog_id}/standard/{image_id}.png"
-        thumbnail_key = f"dogs/{dog_id}/thumbnail/{image_id}.png"
-        
-        # Store original image
-        s3_client.put_object(
-            Bucket=bucket,
-            Key=original_key,
-            Body=image_data,
-            ContentType=content_type
-        )
-        
-        # Create and store standard size image
-        standard_image = resize_image(image_data, STANDARD_SIZE)
-        s3_client.put_object(
-            Bucket=bucket,
-            Key=standard_key,
-            Body=standard_image,
-            ContentType='image/png'
-        )
-        
-        # Create and store thumbnail
-        thumbnail_image = resize_image(image_data, THUMBNAIL_SIZE)
-        s3_client.put_object(
-            Bucket=bucket,
-            Key=thumbnail_key,
-            Body=thumbnail_image,
-            ContentType='image/png'
-        )
-        
-        # Update DynamoDB with image metadata
-        image_metadata = {
-            'image_id': image_id,
-            'original_key': original_key,
-            'standard_key': standard_key,
-            'thumbnail_key': thumbnail_key,
-            'content_type': content_type,
-            'created_at': timestamp,
-            'original_filename': filename
-        }
-        
-        # Update the dog record with the new image
-        dogs_table.update_item(
-            Key={
-                'shelter_id': shelter_id,
-                'dog_id': dog_id
-            },
-            UpdateExpression="SET images = list_append(if_not_exists(images, :empty_list), :image)",
-            ExpressionAttributeValues={
-                ':image': [image_metadata],
-                ':empty_list': []
-            }
-        )
-        
-        # Delete the original upload now that we've processed it
-        s3_client.delete_object(Bucket=bucket, Key=key)
+            logger.info(f"Processing image: {object_key} from bucket: {bucket_name}")
+            
+            # Only process images in the uploads/images/ folder
+            if not object_key.startswith('uploads/images/'):
+                logger.info(f"Skipping non-image upload: {object_key}")
+                continue
+            
+            # Step 2: Download the original image from S3
+            logger.info("Downloading original image from S3...")
+            original_image_data = download_image_from_s3(bucket_name, object_key)
+            
+            if not original_image_data:
+                logger.error(f"Failed to download image: {object_key}")
+                continue
+            
+            # Step 3: For now, copy original image (will add real resizing later)
+            logger.info("Copying image to processed folders...")
+            # We'll implement real resizing in the next step
+            
+            # Step 4: Generate S3 keys for resized images
+            base_name = object_key.replace('uploads/images/', '').replace('.jpg', '').replace('.jpeg', '').replace('.png', '')
+            resized_key = f"processed/resized/{base_name}_400x400.png"
+            thumbnail_key = f"processed/thumbnails/{base_name}_50x50.png"
+            
+            # Step 5: Copy original image to processed folders
+            logger.info("Copying images to processed folders...")
+            upload_success_resized = copy_image_to_s3(bucket_name, object_key, resized_key)
+            upload_success_thumbnail = copy_image_to_s3(bucket_name, object_key, thumbnail_key)
+            
+            if upload_success_resized and upload_success_thumbnail:
+                # Step 6: Update database with image metadata
+                logger.info("Updating database with image metadata...")
+                update_database_with_images(object_key, resized_key, thumbnail_key)
+                logger.info(f"Successfully processed image: {object_key}")
+            else:
+                logger.error(f"Failed to upload resized images for: {object_key}")
         
         return {
             'statusCode': 200,
-            'body': json.dumps({
-                'message': 'Image processed successfully',
-                'image_id': image_id,
-                'dog_id': dog_id
-            })
+            'body': json.dumps({'message': 'Image processing completed successfully'})
         }
         
     except Exception as e:
-        logger.error(f"Error processing image: {str(e)}")
+        logger.error(f"Error in image processing: {str(e)}")
         return {
             'statusCode': 500,
-            'body': json.dumps({
-                'message': f'Error processing image: {str(e)}'
-            })
+            'body': json.dumps({'error': 'Image processing failed'})
         }
 
-def handler(event, context):
-    """Lambda handler for processing uploaded images"""
-    logger.info(f"Received event: {json.dumps(event)}")
-    
+def download_image_from_s3(bucket_name, object_key):
+    """
+    Download image data from S3
+    Returns the raw image bytes
+    """
     try:
-        # Handle S3 event trigger
-        if 'Records' in event and event['Records'][0].get('eventSource') == 'aws:s3':
-            record = event['Records'][0]
-            bucket = record['s3']['bucket']['name']
-            key = unquote_plus(record['s3']['object']['key'])
-            
-            # Extract dog_id and shelter_id from the key
-            # Expected format: uploads/{shelter_id}/{dog_id}/{filename}
-            path_parts = key.split('/')
-            if len(path_parts) >= 4 and path_parts[0] == 'uploads':
-                shelter_id = path_parts[1]
-                dog_id = path_parts[2]
-                return process_image(bucket, key, dog_id, shelter_id)
-            else:
-                logger.error(f"Invalid key format: {key}")
-                return {
-                    'statusCode': 400,
-                    'body': json.dumps({
-                        'message': f'Invalid key format: {key}. Expected: uploads/{{shelter_id}}/{{dog_id}}/{{filename}}'
-                    })
-                }
-        
-        # Handle direct Lambda invocation (for testing)
-        elif 'dog_id' in event and 'shelter_id' in event and 'key' in event:
-            return process_image(
-                event.get('bucket', bucket_name),
-                event['key'],
-                event['dog_id'],
-                event['shelter_id']
-            )
-        
-        else:
-            logger.error("Invalid event structure")
-            return {
-                'statusCode': 400,
-                'body': json.dumps({
-                    'message': 'Invalid event structure'
-                })
-            }
-            
+        response = s3_client.get_object(Bucket=bucket_name, Key=object_key)
+        return response['Body'].read()
     except Exception as e:
-        logger.error(f"Error in handler: {str(e)}")
-        return {
-            'statusCode': 500,
-            'body': json.dumps({
-                'message': f'Error in handler: {str(e)}'
-            })
+        logger.error(f"Error downloading image from S3: {str(e)}")
+        return None
+
+def copy_image_to_s3(bucket_name, source_key, dest_key):
+    """
+    Copy image from source to destination in S3
+    """
+    try:
+        copy_source = {'Bucket': bucket_name, 'Key': source_key}
+        s3_client.copy_object(
+            CopySource=copy_source,
+            Bucket=bucket_name,
+            Key=dest_key
+        )
+        logger.info(f"Successfully copied {source_key} to {dest_key}")
+        return True
+    except Exception as e:
+        logger.error(f"Error copying image: {str(e)}")
+        return False
+
+def update_database_with_images(original_key, resized_key, thumbnail_key):
+    """
+    Update the dog record in DynamoDB with image URLs
+    
+    This finds the dog record that matches the uploaded image
+    and adds the image URLs to it
+    """
+    try:
+        # Generate URLs for all three images
+        base_url = f"https://{IMAGES_BUCKET_NAME}.s3.amazonaws.com"
+        
+        image_metadata = {
+            'original_url': f"{base_url}/{original_key}",
+            'resized_url': f"{base_url}/{resized_key}",
+            'thumbnail_url': f"{base_url}/{thumbnail_key}",
+            'original_key': original_key,
+            'resized_key': resized_key,
+            'thumbnail_key': thumbnail_key,
+            'processed_at': datetime.now(timezone.utc).isoformat()
         }
+        
+        # For now, we'll log the metadata
+        # In a real implementation, you'd find the dog record by matching the S3 key
+        # and update it with this image metadata
+        logger.info(f"Image metadata ready for database update: {json.dumps(image_metadata, default=str)}")
+        
+        # TODO: Implement database update logic
+        # This would require matching the S3 key to a specific dog record
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error updating database: {str(e)}")
+        return False

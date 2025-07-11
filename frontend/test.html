@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pupper - Test</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        .home { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .home-header { background-color: #282c34; padding: 20px; color: white; margin-bottom: 30px; border-radius: 8px; text-align: center; }
+        .dogs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; padding: 20px 0; }
+        .dog-card { border: 1px solid #ddd; border-radius: 8px; padding: 15px; background-color: #f9f9f9; }
+        .dog-thumbnail { width: 100%; height: 200px; object-fit: cover; border-radius: 4px; cursor: pointer; margin-bottom: 10px; }
+        .dog-info h3 { margin: 10px 0; color: #333; }
+        .dog-info p { margin: 5px 0; text-align: left; }
+        .loading { font-size: 18px; padding: 50px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        
+        const mockDogs = [
+            {
+                id: 1,
+                name: 'Buddy',
+                breed: 'Labrador Retriever',
+                description: 'Friendly and energetic dog looking for a loving home',
+                thumbnail_url: 'https://via.placeholder.com/300x200/4CAF50/white?text=Buddy',
+                original_url: 'https://via.placeholder.com/800x600/4CAF50/white?text=Buddy+Full+Size'
+            },
+            {
+                id: 2,
+                name: 'Luna',
+                breed: 'Golden Retriever',
+                description: 'Sweet and gentle, great with kids',
+                thumbnail_url: 'https://via.placeholder.com/300x200/2196F3/white?text=Luna',
+                original_url: 'https://via.placeholder.com/800x600/2196F3/white?text=Luna+Full+Size'
+            }
+        ];
+        
+        const DogCard = ({ dog, onImageClick }) => (
+            <div className="dog-card">
+                <img 
+                    src={dog.thumbnail_url} 
+                    alt={dog.name}
+                    className="dog-thumbnail"
+                    onClick={() => onImageClick(dog.original_url)}
+                />
+                <div className="dog-info">
+                    <h3>{dog.name}</h3>
+                    {dog.breed && <p><strong>Breed:</strong> {dog.breed}</p>}
+                    <p>{dog.description}</p>
+                </div>
+            </div>
+        );
+        
+        const App = () => {
+            const [dogs, setDogs] = useState([]);
+            const [loading, setLoading] = useState(true);
+            
+            useEffect(() => {
+                setTimeout(() => {
+                    setDogs(mockDogs);
+                    setLoading(false);
+                }, 1000);
+            }, []);
+            
+            const handleImageClick = (originalUrl) => {
+                window.open(originalUrl, '_blank');
+            };
+            
+            if (loading) {
+                return <div className="loading">Loading dogs...</div>;
+            }
+            
+            return (
+                <div className="home">
+                    <header className="home-header">
+                        <h1>Pupper - Dogs Available for Adoption</h1>
+                    </header>
+                    <main className="dogs-grid">
+                        {dogs.map(dog => (
+                            <DogCard 
+                                key={dog.id} 
+                                dog={dog} 
+                                onImageClick={handleImageClick}
+                            />
+                        ))}
+                    </main>
+                </div>
+            );
+        };
+        
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>

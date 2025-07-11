@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>API Test</title>
+</head>
+<body>
+    <h1>API Connection Test</h1>
+    <button onclick="testAPI()">Test API</button>
+    <div id="result"></div>
+
+    <script>
+        async function testAPI() {
+            const apiUrl = 'https://3wfbfr7110.execute-api.us-east-1.amazonaws.com/prod';
+            const resultDiv = document.getElementById('result');
+            
+            try {
+                console.log('Testing API:', apiUrl + '/dogs');
+                
+                const response = await fetch(apiUrl + '/dogs', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                console.log('Response status:', response.status);
+                console.log('Response headers:', [...response.headers.entries()]);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('Success:', data);
+                    resultDiv.innerHTML = '<h3>Success!</h3><pre>' + JSON.stringify(data, null, 2) + '</pre>';
+                } else {
+                    const errorText = await response.text();
+                    console.log('Error response:', errorText);
+                    resultDiv.innerHTML = '<h3>Error ' + response.status + '</h3><pre>' + errorText + '</pre>';
+                }
+            } catch (error) {
+                console.error('Fetch error:', error);
+                resultDiv.innerHTML = '<h3>Network Error</h3><p>' + error.message + '</p>';
+            }
+        }
+    </script>
+</body>
+</html>

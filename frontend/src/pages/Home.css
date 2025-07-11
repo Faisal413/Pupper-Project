@@ -1,0 +1,14 @@
+.home {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.home-header {
+  background-color: #282c34;
+  padding: 20px;
+  color: white;
+  margin-bottom: 30px;
+  border-radius: 8px;
+  text-align: center;
+}

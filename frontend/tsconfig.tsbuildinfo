@@ -1,0 +1,1 @@
+{"root":["./src/App.tsx","./src/main.tsx","./src/theme.ts","./src/vite-env.d.ts","./src/components/AddDog.tsx","./src/components/EditDog.tsx","./src/components/Home.tsx","./src/components/WaggedDogs.tsx","./src/hooks/useDarkMode.ts","./src/types/Dog.ts"],"errors":true,"version":"5.8.3"}
